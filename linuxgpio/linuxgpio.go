@@ -197,7 +197,22 @@ func (node *gpioNode) Open() (GpioPin, error) {
 }
 
 func (pin *gpioPin) Close() (err error) {
-	return pin.dir.Close()
+	// Try to close whatever we can before checking for errors
+	// so that we'll have closed as much as possible before we
+	// return. Unfortunately this means the caller won't get the
+	// whole picture if multiple things fail, but this is considered
+	// and edge case and not worth worrying too much about.
+	dirCloseErr := pin.dir.Close()
+	fileCloseErr := pin.valueFile.Close()
+
+	switch {
+	case dirCloseErr != nil:
+		return dirCloseErr
+	case fileCloseErr != nil:
+		return fileCloseErr
+	default:
+		return nil
+	}
 }
 
 func (pin *gpioPin) Node() GpioNode {
