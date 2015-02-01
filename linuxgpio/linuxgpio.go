@@ -20,6 +20,7 @@ import (
 // unexported, etc.
 type GpioPin interface {
 	gpio.Pin
+	gpio.EdgeWaiter
 
 	// Number returns the GPIO number that this instance controls.
 	Number() int
@@ -115,8 +116,10 @@ type gpioPin struct {
 	// read a value (which will happen often in many programs) we pre-allocate
 	// an array and always read into it. Note however that this means that
 	// reading a value is not thread-safe. Worth fixing that?
-	readBuf   []byte
-	valueFile *os.File
+	readBuf     []byte
+	valueFile   *os.File
+	epollFd     int
+	epollEvents [1]syscall.EpollEvent
 }
 
 // MakeGpioNode is the primary way to get hold of a GpioNode object
@@ -184,11 +187,42 @@ func (node *gpioNode) Open() (GpioPin, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			dir.Close()
+		}
+	}()
 
 	readBuf := make([]byte, 1, 1)
 	pin := &gpioPin{node: node, dir: dir, readBuf: readBuf}
 
 	pin.valueFile, err = pin.openFile("value")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			pin.valueFile.Close()
+		}
+	}()
+
+	pin.epollFd, err = syscall.EpollCreate1(0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			syscall.Close(pin.epollFd)
+		}
+	}()
+
+	valueFd := int(pin.valueFile.Fd())
+
+	var event syscall.EpollEvent
+	event.Fd = int32(valueFd) // FIXME: will fail on 64-bit systems?
+	event.Events = syscall.EPOLLIN | (syscall.EPOLLET & 0xffffffff) | syscall.EPOLLPRI
+
+	err = syscall.EpollCtl(pin.epollFd, syscall.EPOLL_CTL_ADD, valueFd, &event)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +289,27 @@ func (pin *gpioPin) SetDirection(dir gpio.Direction) error {
 		// should never happen in a valid program
 		panic("Invalid gpio.Direction value")
 	}
+}
+
+func (pin *gpioPin) SetSensitivity(dir gpio.EdgeSensitivity) error {
+	switch dir {
+	case gpio.NoEdges:
+		return pin.writeFile("edge", "none\n")
+	case gpio.RisingEdge:
+		return pin.writeFile("edge", "rising\n")
+	case gpio.FallingEdge:
+		return pin.writeFile("edge", "falling\n")
+	case gpio.BothEdges:
+		return pin.writeFile("edge", "both\n")
+	default:
+		// should never happen in a valid program
+		panic("Invalid gpio.EdgeSensitivity value")
+	}
+}
+
+func (pin *gpioPin) WaitForEdge() error {
+	_, err := syscall.EpollWait(pin.epollFd, pin.epollEvents[:], -1)
+	return err
 }
 
 func (pin *gpioPin) SetValue(value gpio.Value) error {
