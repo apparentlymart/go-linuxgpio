@@ -16,10 +16,10 @@ import (
 	"syscall"
 )
 
-// GpioPin is an extension of gpio.GpioPin that allows a pin to be closed,
+// GpioPin is an extension of gpio.Pin that allows a pin to be closed,
 // unexported, etc.
 type GpioPin interface {
-	gpio.GpioPin
+	gpio.Pin
 
 	// Number returns the GPIO number that this instance controls.
 	Number() int
