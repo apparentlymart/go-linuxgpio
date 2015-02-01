@@ -1,3 +1,5 @@
+// +build linux
+
 // Package linuxgpio provides access to the Linux userspace GPIO interface
 // (via sysfs).
 //
