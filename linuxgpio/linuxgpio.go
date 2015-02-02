@@ -18,9 +18,9 @@ import (
 	"syscall"
 )
 
-// GpioPin is an extension of gpio.Pin that allows a pin to be closed,
+// Pin is an extension of gpio.Pin that allows a pin to be closed,
 // unexported, etc.
-type GpioPin interface {
+type Pin interface {
 	gpio.Pin
 	gpio.EdgeWaiter
 
@@ -32,8 +32,8 @@ type GpioPin interface {
 	// will fail.
 	Close() (err error)
 
-	// Node returns the GpioNode object from which this pin was opened.
-	Node() (node GpioNode)
+	// Node returns the Node object from which this pin was opened.
+	Node() (node Node)
 }
 
 var (
@@ -46,10 +46,10 @@ func init() {
 	highData = []byte{'1', '\n'}
 }
 
-// GpioNode represents a Linux GPIO number that may or may not have been
+// Node represents a Linux GPIO number that may or may not have been
 // "exported" into sysfs, and provides an API to export or unexport the
 // corresponding GPIO number.
-type GpioNode interface {
+type Node interface {
 
 	// Number returns the GPIO number to which this node belongs.
 	Number() int
@@ -80,14 +80,14 @@ type GpioNode interface {
 	ExportIfNecessary() (exported bool, err error)
 
 	// Unexport asks the kernel to remove the corresponding GPIO from sysfs.
-	// Once it has been unexported, any GpioPins created from this node are
+	// Once it has been unexported, any Pin objects created from this node are
 	// invalidated and operations on them will fail.
 	// It is an error to unexport a GPIO that is not already exported.
 	Unexport() (err error)
 
 	// Open the corresponding GPIO so that it can be controlled by the
 	// caller.
-	Open() (pin GpioPin, err error)
+	Open() (pin Pin, err error)
 }
 
 // GpioChip represents an instance of a Linux GPIO driver that implements
@@ -124,12 +124,12 @@ type gpioPin struct {
 	epollEvents [1]syscall.EpollEvent
 }
 
-// MakeGpioNode is the primary way to get hold of a GpioNode object
+// MakeNode is the primary way to get hold of a Node object
 // representing a particular GPIO. The meaning of the GPIO number varies
 // on different host systems; consult the documentation for the host hardware
 // to determine appropriate values of "number", or use GpioChips to discover
 // which GPIOs are available.
-func MakeGpioNode(number int) (node GpioNode) {
+func MakeNode(number int) (node Node) {
 	path := fmt.Sprintf("/sys/class/gpio/gpio%d", number)
 	return &gpioNode{number: number, path: path}
 }
@@ -184,7 +184,7 @@ func (node *gpioNode) Number() int {
 	return node.number
 }
 
-func (node *gpioNode) Open() (GpioPin, error) {
+func (node *gpioNode) Open() (Pin, error) {
 	dir, err := os.Open(node.path)
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func (pin *gpioPin) Close() (err error) {
 	}
 }
 
-func (pin *gpioPin) Node() GpioNode {
+func (pin *gpioPin) Node() Node {
 	return pin.node
 }
 
